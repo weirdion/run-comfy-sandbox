@@ -1,0 +1,18 @@
+# Ansible
+*.retry
+.vault_password
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+._.DS_Store
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Don't commit passwords
+ansible/vars/secrets.yml
