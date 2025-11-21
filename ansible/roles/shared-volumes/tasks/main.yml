@@ -1,0 +1,97 @@
+---
+# Set up directory symlinks using shared group permissions
+
+- name: Ensure primary user AI workspace directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ primary_user }}"
+    group: "{{ shared_group }}"
+    mode: '2775'
+  become: true
+  loop:
+    - "{{ ai_workspace }}"
+    - "{{ ai_workspace }}/comfy"
+    - "{{ ai_workspace }}/comfy/workflows"
+    - "{{ ai_workspace }}/input"
+    - "{{ ai_workspace }}/output"
+  # 2775 = setgid bit ensures new files inherit comfyshared group
+  # Both users have read/write/execute
+
+- name: Ensure models directory exists with read-only group access
+  ansible.builtin.file:
+    path: "{{ models_source_dir }}"
+    state: directory
+    owner: "{{ primary_user }}"
+    group: "{{ shared_group }}"
+    mode: '2755'
+  become: true
+  # Models are 2755: setgid bit ensures new files inherit comfyshared group
+  # Primary user can write, sandbox user can only read
+
+- name: Set group ownership recursively on shared directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ primary_user }}"
+    group: "{{ shared_group }}"
+    mode: '2775'
+    recurse: true
+  become: true
+  loop:
+    - "{{ ai_workspace }}/comfy/workflows"
+    - "{{ ai_workspace }}/input"
+    - "{{ ai_workspace }}/output"
+    - "{{ models_source_dir }}"
+  # 2775 = setgid bit ensures new files inherit comfyshared group
+  # Ensures all files in these directories are accessible to both users
+
+- name: Create symlink for entire models directory
+  ansible.builtin.file:
+    src: "{{ models_source_dir }}"
+    dest: "{{ comfyui_dir }}/models"
+    state: link
+    force: true
+  become: true
+  become_user: "{{ sandbox_user }}"
+  # Symlink entire models directory (read-only for sandbox)
+
+- name: Ensure parent directories exist for directory symlinks
+  ansible.builtin.file:
+    path: "{{ item.dest | dirname }}"
+    state: directory
+    owner: "{{ sandbox_user }}"
+    group: staff
+    mode: '0755'
+  become: true
+  loop: "{{ directory_symlinks }}"
+
+- name: Create directory symlinks (workflows, input, output)
+  ansible.builtin.file:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    state: link
+    force: true
+  become: true
+  become_user: "{{ sandbox_user }}"
+  loop: "{{ directory_symlinks }}"
+  # Symlinks to shared read/write directories
+
+- name: Display shared volumes info
+  ansible.builtin.debug:
+    msg: |
+      Directory symlinks created using shared group: {{ shared_group }}
+
+      Read/Write (both users - 775):
+      {% for link in directory_symlinks %}
+        {{ link.description }}: {{ link.src }} -> {{ link.dest }}
+      {% endfor %}
+
+      Read-Only for sandbox (755):
+        Models: {{ models_source_dir }} -> {{ comfyui_dir }}/models
+
+      Permission model:
+        - Primary user ({{ primary_user }}): owns all files
+        - Shared group ({{ shared_group }}): both users are members
+        - Workflows/input/output: 775 (group has read/write)
+        - Models: 755 (group has read-only)

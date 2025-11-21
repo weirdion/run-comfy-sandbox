@@ -1,0 +1,113 @@
+---
+# Sandbox Configuration Variables
+
+# Sandbox user settings
+sandbox_user: comfyui_sandbox
+sandbox_user_uid: 503
+sandbox_user_shell: /bin/zsh
+sandbox_user_home: "/Users/{{ sandbox_user }}"
+
+# Primary user (user running ansible)
+primary_user: "{{ ansible_facts['user_id'] }}"
+primary_user_home: "{{ ansible_facts['env']['HOME'] }}"
+
+# Shared group for file access between primary and sandbox users
+shared_group: comfyshared
+shared_group_gid: 504
+
+# ComfyUI settings
+comfyui_repo: "https://github.com/comfyanonymous/ComfyUI.git"
+comfyui_branch: "master"
+comfyui_dir: "{{ sandbox_user_home }}/ComfyUI"
+comfyui_listen_host: "127.0.0.1"
+comfyui_port: 8188
+
+# Python virtual environment
+venv_dir: "{{ comfyui_dir }}/venv"
+python_version: "python3"
+
+# Primary user AI workspace
+ai_workspace: "{{ primary_user_home }}/workspace/ai"
+
+# Model directories to symlink (read-only from primary user)
+# Source: ~/workspace/ai/models/
+models_source_dir: "{{ ai_workspace }}/models"
+model_symlinks:
+  - checkpoints
+  - clip
+  - clip_vision
+  - controlnet
+  - embeddings
+  - loras
+  - upscale_models
+  - vae
+  - unet
+
+# Directory symlinks from primary user to sandbox ComfyUI
+# Format: { src: "~/workspace/ai/path", dest: "~/ComfyUI/path" }
+directory_symlinks:
+  - src: "{{ ai_workspace }}/comfy/workflows"
+    dest: "{{ comfyui_dir }}/user/default/workflows"
+    description: "Workflow files"
+  - src: "{{ ai_workspace }}/input"
+    dest: "{{ comfyui_dir }}/input"
+    description: "Input images"
+  - src: "{{ ai_workspace }}/output"
+    dest: "{{ comfyui_dir }}/output"
+    description: "Generated outputs"
+
+# Custom nodes to install (git clone + requirements.txt)
+# Add/remove entries to manage installed custom nodes
+# Each node will be cloned and have its requirements.txt installed if present
+custom_nodes:
+  # SAFE NODES (Low risk - from security review)
+  - name: ComfyUI_ADV_CLIP_emb
+    repo: https://github.com/BlenderNeko/ComfyUI_ADV_CLIP_emb.git
+    enabled: true
+
+  - name: ComfyUI-mxToolkit
+    repo: https://github.com/Smirnov75/ComfyUI-mxToolkit.git
+    enabled: true
+
+  - name: ComfyUI-Image-Saver
+    repo: https://github.com/alexopus/ComfyUI-Image-Saver.git
+    enabled: true
+
+  # MEDIUM RISK NODES (Use with caution)
+
+  - name: ComfyUI-Impact-Pack
+    repo: https://github.com/ltdrdata/ComfyUI-Impact-Pack.git
+    enabled: true
+    note: "Unsafe YAML loading - review before enabling"
+
+  - name: ComfyUI-Image-Saver
+    repo: https://github.com/alexopus/ComfyUI-Image-Saver.git
+    enabled: true
+    note: "SSRF vulnerabilities - review before enabling"
+
+  - name: ComfyUI-FBCNN
+    repo: https://github.com/Miosp/ComfyUI-FBCNN.git
+    enabled: true
+    note: "Insecure model download - review before enabling"
+
+  - name: ComfyUI-Impact-Subpack
+    repo: https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git
+    enabled: true
+    note: "Model download without verification"
+
+  - name: ComfyUI-YoloWorld-EfficientSAM
+    repo: https://github.com/ZHO-ZHO-ZHO/ComfyUI-YoloWorld-EfficientSAM.git
+    enabled: true
+
+  # UNSAFE NODES (Critical vulnerabilities)
+  # These are documented here but should NOT be enabled
+
+  - name: ComfyUI-Manager
+    repo: https://github.com/ltdrdata/ComfyUI-Manager.git
+    enabled: false
+    note: "CRITICAL: Arbitrary code execution via git URLs, pip injection"
+
+  - name: ComfyUI-Easy-Use
+    repo: https://github.com/yolain/ComfyUI-Easy-Use.git
+    enabled: true
+    note: "CRITICAL: eval() usage, unsafe pickle, unsafe YAML"

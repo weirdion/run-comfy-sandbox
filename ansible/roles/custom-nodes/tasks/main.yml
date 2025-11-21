@@ -1,0 +1,157 @@
+---
+# Install custom nodes by cloning from git and installing requirements
+
+- name: Create custom_nodes directory
+  ansible.builtin.file:
+    path: "{{ comfyui_dir }}/custom_nodes"
+    state: directory
+    owner: "{{ sandbox_user }}"
+    group: staff
+    mode: '0755'
+  become: true
+
+- name: Filter enabled custom nodes
+  ansible.builtin.set_fact:
+    enabled_custom_nodes: "{{ custom_nodes | selectattr('enabled', 'equalto', true) | list }}"
+
+- name: Display custom nodes to install
+  ansible.builtin.debug:
+    msg: |
+      Installing {{ enabled_custom_nodes | length }} custom nodes:
+      {% for node in enabled_custom_nodes %}
+        - {{ node.name }} ({{ node.repo }})
+      {% endfor %}
+
+- name: Configure git username for sandbox user
+  ansible.builtin.command:
+    cmd: git config --global user.name "ComfyUI Sandbox"
+  become: true
+  become_user: "{{ sandbox_user }}"
+  changed_when: false
+
+- name: Configure git email for sandbox user
+  ansible.builtin.command:
+    cmd: git config --global user.email "sandbox@localhost"
+  become: true
+  become_user: "{{ sandbox_user }}"
+  changed_when: false
+
+- name: Clone custom node repositories
+  ansible.builtin.git:
+    repo: "{{ item.repo }}"
+    dest: "{{ comfyui_dir }}/custom_nodes/{{ item.name }}"
+    version: HEAD
+    update: true
+  become: true
+  become_user: "{{ sandbox_user }}"
+  loop: "{{ enabled_custom_nodes }}"
+  register: git_clone_result
+
+- name: Set ownership of custom nodes
+  ansible.builtin.file:
+    path: "{{ comfyui_dir }}/custom_nodes/{{ item.name }}"
+    owner: "{{ sandbox_user }}"
+    group: staff
+    recurse: true
+  become: true
+  loop: "{{ enabled_custom_nodes }}"
+
+- name: Get current git SHA for each custom node
+  ansible.builtin.command:
+    cmd: git rev-parse HEAD
+    chdir: "{{ comfyui_dir }}/custom_nodes/{{ item.name }}"
+  become: true
+  become_user: "{{ sandbox_user }}"
+  loop: "{{ enabled_custom_nodes }}"
+  register: node_git_sha
+  changed_when: false
+  failed_when: false
+
+- name: Create .sandbox-version file for each custom node
+  ansible.builtin.copy:
+    content: |
+      # Sandbox Version Tracking
+      repo_url: {{ item.item.repo }}
+      current_sha: {{ item.stdout }}
+      previous_sha: none
+      installed_at: {{ ansible_facts['date_time']['iso8601'] }}
+      updated_at: {{ ansible_facts['date_time']['iso8601'] }}
+      status: initial_install
+    dest: "{{ comfyui_dir }}/custom_nodes/{{ item.item.name }}/.sandbox-version"
+    owner: "{{ sandbox_user }}"
+    group: staff
+    mode: '0644'
+    force: false  # Don't overwrite if already exists
+  become: true
+  loop: "{{ node_git_sha.results }}"
+  when: not item.failed
+
+- name: Check for requirements.txt in each custom node
+  ansible.builtin.stat:
+    path: "{{ comfyui_dir }}/custom_nodes/{{ item.name }}/requirements.txt"
+  register: requirements_check
+  loop: "{{ enabled_custom_nodes }}"
+  become: true
+  become_user: "{{ sandbox_user }}"
+
+- name: Display nodes with requirements.txt
+  ansible.builtin.debug:
+    msg: |
+      Custom nodes with requirements.txt:
+      {% for result in requirements_check.results %}
+      {% if result.stat.exists %}
+        - {{ result.item.name }}: {{ result.stat.path }}
+      {% endif %}
+      {% endfor %}
+
+- name: Install requirements.txt for each custom node
+  ansible.builtin.command:
+    cmd: "{{ venv_dir }}/bin/pip install -r {{ comfyui_dir }}/custom_nodes/{{ item.item.name }}/requirements.txt"
+  become: true
+  become_user: "{{ sandbox_user }}"
+  loop: "{{ requirements_check.results }}"
+  when: item.stat.exists
+  register: pip_install_result
+  changed_when: "'Successfully installed' in pip_install_result.stdout"
+
+- name: Check for install.py scripts
+  ansible.builtin.stat:
+    path: "{{ comfyui_dir }}/custom_nodes/{{ item.name }}/install.py"
+  register: install_script_check
+  loop: "{{ enabled_custom_nodes }}"
+  become: true
+  become_user: "{{ sandbox_user }}"
+
+- name: Warn about install.py scripts
+  ansible.builtin.debug:
+    msg: |
+      ⚠️  WARNING: The following custom nodes have install.py scripts:
+      {% for result in install_script_check.results %}
+      {% if result.stat.exists %}
+        - {{ result.item.name }}: {{ result.stat.path }}
+      {% endif %}
+      {% endfor %}
+
+      These scripts are NOT automatically executed for security reasons.
+      Review them manually and run if needed:
+        make shell
+        cd ~/ComfyUI/custom_nodes/<node_name>
+        python install.py
+  when: install_script_check.results | selectattr('stat.exists', 'equalto', true) | list | length > 0
+
+- name: Display custom nodes installation summary
+  ansible.builtin.debug:
+    msg: |
+
+      ✅ Custom Nodes Installation Complete
+
+      Installed nodes: {{ enabled_custom_nodes | length }}
+      {% for node in enabled_custom_nodes %}
+        - {{ node.name }}
+      {% endfor %}
+
+      Disabled nodes: {{ custom_nodes | rejectattr('enabled', 'equalto', true) | list | length }}
+
+      To add more nodes:
+        1. Add to custom_nodes list in ansible/vars/main.yml
+        2. Run: make provision

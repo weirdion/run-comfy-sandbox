@@ -1,0 +1,100 @@
+---
+# Create and configure sandbox user
+
+- name: Check if sandbox user already exists
+  ansible.builtin.command: dscl . -read /Users/{{ sandbox_user }}
+  register: user_check
+  failed_when: false
+  changed_when: false
+
+- name: Create sandbox user
+  ansible.builtin.command: dscl . -create /Users/{{ sandbox_user }}
+  when: user_check.rc != 0
+  become: true
+
+- name: Set user shell
+  ansible.builtin.command: dscl . -create /Users/{{ sandbox_user }} UserShell {{ sandbox_user_shell }}
+  become: true
+
+- name: Set user real name
+  ansible.builtin.command: dscl . -create /Users/{{ sandbox_user }} RealName "ComfyUI Sandbox"
+  become: true
+
+- name: Set user UID
+  ansible.builtin.command: dscl . -create /Users/{{ sandbox_user }} UniqueID {{ sandbox_user_uid }}
+  become: true
+
+- name: Set user primary group
+  ansible.builtin.command: dscl . -create /Users/{{ sandbox_user }} PrimaryGroupID 20
+  become: true
+
+- name: Set user home directory
+  ansible.builtin.command: dscl . -create /Users/{{ sandbox_user }} NFSHomeDirectory {{ sandbox_user_home }}
+  become: true
+
+- name: Create home directory
+  ansible.builtin.command: createhomedir -c -u {{ sandbox_user }}
+  become: true
+  args:
+    creates: "{{ sandbox_user_home }}"
+
+- name: Check if password is already set
+  ansible.builtin.stat:
+    path: "{{ sandbox_user_home }}/.password_set"
+  register: password_marker
+
+- name: Set user password
+  ansible.builtin.command: dscl . -passwd /Users/{{ sandbox_user }} {{ sandbox_user_password | default('comfyui123') }}
+  become: true
+  when: not password_marker.stat.exists
+  no_log: true
+
+- name: Mark password as set
+  ansible.builtin.file:
+    path: "{{ sandbox_user_home }}/.password_set"
+    state: touch
+    owner: "{{ sandbox_user }}"
+    mode: '0600'
+  become: true
+  when: not password_marker.stat.exists
+
+- name: Check if shared group exists
+  ansible.builtin.command: dscl . -read /Groups/{{ shared_group }}
+  register: group_check
+  failed_when: false
+  changed_when: false
+
+- name: Create shared group
+  ansible.builtin.command: dscl . -create /Groups/{{ shared_group }}
+  when: group_check.rc != 0
+  become: true
+
+- name: Set shared group GID
+  ansible.builtin.command: dscl . -create /Groups/{{ shared_group }} PrimaryGroupID {{ shared_group_gid }}
+  become: true
+
+- name: Add primary user to shared group
+  ansible.builtin.command: dseditgroup -o edit -a {{ primary_user }} -t user {{ shared_group }}
+  become: true
+  register: primary_group_add
+  failed_when: primary_group_add.rc != 0 and 'already a member' not in primary_group_add.stderr
+  changed_when: primary_group_add.rc == 0
+
+- name: Add sandbox user to shared group
+  ansible.builtin.command: dseditgroup -o edit -a {{ sandbox_user }} -t user {{ shared_group }}
+  become: true
+  register: sandbox_group_add
+  failed_when: sandbox_group_add.rc != 0 and 'already a member' not in sandbox_group_add.stderr
+  changed_when: sandbox_group_add.rc == 0
+
+- name: Display sandbox user info
+  ansible.builtin.debug:
+    msg: |
+      Sandbox user created:
+        Username: {{ sandbox_user }}
+        Home: {{ sandbox_user_home }}
+        UID: {{ sandbox_user_uid }}
+        Shell: {{ sandbox_user_shell }}
+
+      Shared group: {{ shared_group }} (GID: {{ shared_group_gid }})
+        Members: {{ primary_user }}, {{ sandbox_user }}

@@ -1,0 +1,105 @@
+---
+# Clone and set up ComfyUI in sandbox user's home
+
+- name: Check if ComfyUI already cloned
+  ansible.builtin.stat:
+    path: "{{ comfyui_dir }}/.git"
+  register: comfyui_git
+
+- name: Clone ComfyUI repository
+  ansible.builtin.git:
+    repo: "{{ comfyui_repo }}"
+    dest: "{{ comfyui_dir }}"
+    version: "{{ comfyui_branch }}"
+  become: true
+  become_user: "{{ sandbox_user }}"
+  when: not comfyui_git.stat.exists
+
+- name: Set ownership of ComfyUI directory
+  ansible.builtin.file:
+    path: "{{ comfyui_dir }}"
+    owner: "{{ sandbox_user }}"
+    group: staff
+    recurse: true
+  become: true
+
+- name: Remove default directories that will be replaced with symlinks
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop:
+    - "{{ comfyui_dir }}/input"
+    - "{{ comfyui_dir }}/output"
+    - "{{ comfyui_dir }}/models"
+    - "{{ comfyui_dir }}/user/default/workflows"
+
+- name: Check if virtual environment exists
+  ansible.builtin.stat:
+    path: "{{ venv_dir }}/bin/activate"
+  register: venv_check
+
+- name: Create Python virtual environment
+  ansible.builtin.command:
+    cmd: "{{ python_version }} -m venv {{ venv_dir }}"
+    creates: "{{ venv_dir }}/bin/activate"
+  become: true
+  become_user: "{{ sandbox_user }}"
+  when: not venv_check.stat.exists
+
+- name: Upgrade pip in virtual environment
+  ansible.builtin.command:
+    cmd: "{{ venv_dir }}/bin/pip install --upgrade pip"
+  become: true
+  become_user: "{{ sandbox_user }}"
+  changed_when: false
+
+- name: Install PyTorch for macOS (MPS support)
+  ansible.builtin.command:
+    cmd: "{{ venv_dir }}/bin/pip install torch torchvision torchaudio"
+  become: true
+  become_user: "{{ sandbox_user }}"
+  changed_when: false
+
+- name: Install ComfyUI requirements
+  ansible.builtin.command:
+    cmd: "{{ venv_dir }}/bin/pip install -r {{ comfyui_dir }}/requirements.txt"
+  become: true
+  become_user: "{{ sandbox_user }}"
+  changed_when: false
+
+- name: Create extra_model_paths.yaml for model symlinks
+  ansible.builtin.copy:
+    content: |
+      # ComfyUI extra model paths configuration
+      # Models are symlinked from primary user (read-only)
+      comfyui:
+        base_path: {{ comfyui_dir }}/
+    dest: "{{ comfyui_dir }}/extra_model_paths.yaml"
+    owner: "{{ sandbox_user }}"
+    group: staff
+    mode: '0644'
+  become: true
+
+- name: Create startup script in sandbox home
+  ansible.builtin.copy:
+    content: |
+      #!/bin/bash
+      # ComfyUI Startup Script
+      cd {{ comfyui_dir }}
+      source {{ venv_dir }}/bin/activate
+      python main.py --listen {{ comfyui_listen_host }} --port {{ comfyui_port }} "$@"
+    dest: "{{ sandbox_user_home }}/start_comfyui.sh"
+    owner: "{{ sandbox_user }}"
+    group: staff
+    mode: '0755'
+  become: true
+
+- name: Display ComfyUI setup info
+  ansible.builtin.debug:
+    msg: |
+      ComfyUI installed:
+        Location: {{ comfyui_dir }}
+        Virtual env: {{ venv_dir }}
+        Listen: {{ comfyui_listen_host }}:{{ comfyui_port }}
+        Startup script: {{ sandbox_user_home }}/start_comfyui.sh

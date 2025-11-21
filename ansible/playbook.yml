@@ -1,0 +1,92 @@
+---
+# Main playbook to provision ComfyUI sandbox environment on macOS
+
+- name: Provision ComfyUI Sandbox Environment
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+
+  pre_tasks:
+    - name: Check if running on macOS
+      ansible.builtin.fail:
+        msg: "This playbook is designed for macOS only"
+      when: ansible_facts['os_family'] != "Darwin"
+
+    - name: Verify we're not running as root
+      ansible.builtin.fail:
+        msg: "Do not run this playbook as root. Run as your primary user with sudo privileges."
+      when: ansible_facts['user_id'] == "root"
+
+    - name: Display configuration
+      ansible.builtin.debug:
+        msg: |
+          Provisioning ComfyUI Sandbox
+          ============================
+          Primary User: {{ primary_user }}
+          Sandbox User: {{ sandbox_user }}
+          ComfyUI Dir: {{ comfyui_dir }}
+          Models Source: {{ models_source_dir }}
+          AI Workspace: {{ ai_workspace }}
+
+    - name: Prompt for sandbox user password
+      ansible.builtin.pause:
+        prompt: "Enter password for sandbox user '{{ sandbox_user }}' (default: comfyui123)"
+        echo: false
+      register: password_prompt
+      when: sandbox_user_password is not defined
+
+    - name: Set sandbox password from prompt
+      ansible.builtin.set_fact:
+        sandbox_user_password: "{{ password_prompt.user_input | default('comfyui123') }}"
+      when: sandbox_user_password is not defined
+      no_log: true
+
+  roles:
+    - role: sandbox-user
+      tags: ['user', 'provision']
+
+    - role: comfyui-setup
+      tags: ['comfyui', 'provision']
+
+    - role: shared-volumes
+      tags: ['volumes', 'provision']
+
+    # Custom nodes are NOT installed during provision
+    # Run 'make update-nodes' after provision to install them
+
+  post_tasks:
+    - name: Display success message
+      ansible.builtin.debug:
+        msg: |
+
+          ✅ ComfyUI Sandbox Environment Provisioned Successfully!
+
+          Next steps:
+          1. Start ComfyUI:
+             make start
+
+          2. Access the UI:
+             http://{{ comfyui_listen_host }}:{{ comfyui_port }}
+
+          3. Open a shell in sandbox:
+             make shell
+
+          4. Install custom nodes (IMPORTANT):
+             make update-nodes
+
+          5. Directory structure:
+             Models:     {{ models_source_dir }}/ -> ~/ComfyUI/models/
+             Workflows:  {{ ai_workspace }}/comfy/workflows/ -> ~/ComfyUI/user/default/workflows/
+             Input:      {{ ai_workspace }}/input/ -> ~/ComfyUI/input/
+             Output:     {{ ai_workspace }}/output/ -> ~/ComfyUI/output/
+
+          6. To tear down and start fresh:
+             make teardown
+
+          Security notes:
+          - Sandbox user: {{ sandbox_user }}
+          - Isolated from primary user's files
+          - Models are read-only symlinks
+          - Custom nodes cloned from verified repos
+          - Network bound to localhost only
