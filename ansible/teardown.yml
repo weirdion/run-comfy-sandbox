@@ -1,0 +1,94 @@
+---
+# Teardown playbook to completely remove sandbox environment
+
+- name: Teardown ComfyUI Sandbox Environment
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+
+  pre_tasks:
+    - name: Confirm teardown
+      ansible.builtin.pause:
+        prompt: |
+          ⚠️  WARNING: This will completely remove the sandbox environment!
+
+          This will delete:
+          - Sandbox user: {{ sandbox_user }}
+          - Home directory: {{ sandbox_user_home }}
+          - All ComfyUI data in sandbox
+
+          This will NOT delete:
+          - Shared directory: {{ shared_base_dir }}
+          - Your primary user's ComfyUI installation
+
+          Type 'yes' to continue, anything else to abort
+      register: confirm
+
+    - name: Abort if not confirmed
+      ansible.builtin.fail:
+        msg: "Teardown aborted by user"
+      when: confirm.user_input | lower != "yes"
+
+  tasks:
+    - name: Stop any running ComfyUI processes
+      ansible.builtin.shell: |
+        pkill -u {{ sandbox_user }} -f "python.*main.py" || true
+      become: true
+      changed_when: false
+      ignore_errors: true
+
+    - name: Wait for processes to stop
+      ansible.builtin.pause:
+        seconds: 2
+
+    - name: Force kill if still running
+      ansible.builtin.shell: |
+        pkill -9 -u {{ sandbox_user }} || true
+      become: true
+      changed_when: false
+      ignore_errors: true
+
+    - name: Remove sandbox user home directory
+      ansible.builtin.file:
+        path: "{{ sandbox_user_home }}"
+        state: absent
+      become: true
+
+    - name: Delete sandbox user account
+      ansible.builtin.command: dscl . -delete /Users/{{ sandbox_user }}
+      become: true
+      ignore_errors: true
+
+    - name: Check if shared directory should be removed
+      ansible.builtin.pause:
+        prompt: "Remove shared directory {{ shared_base_dir }}? (yes/no, default: no)"
+      register: remove_shared
+
+    - name: Remove shared directory
+      ansible.builtin.file:
+        path: "{{ shared_base_dir }}"
+        state: absent
+      when: remove_shared.user_input | lower == "yes"
+
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+
+          ✅ Sandbox environment removed successfully!
+
+          Removed:
+          - User: {{ sandbox_user }}
+          - Home: {{ sandbox_user_home }}
+          {% if remove_shared.user_input | lower == "yes" %}
+          - Shared: {{ shared_base_dir }}
+          {% endif %}
+
+          Preserved:
+          - Your primary ComfyUI installation: {{ source_comfyui }}
+          {% if remove_shared.user_input | lower != "yes" %}
+          - Shared directory: {{ shared_base_dir }}
+          {% endif %}
+
+          To recreate the sandbox:
+          ansible-playbook ansible/playbook.yml
