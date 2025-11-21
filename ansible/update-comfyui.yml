@@ -1,0 +1,113 @@
+---
+# Update ComfyUI itself to latest version
+
+- name: Update ComfyUI Core
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+
+  pre_tasks:
+    - name: Check if sandbox user exists
+      ansible.builtin.command: dscl . -read /Users/{{ sandbox_user }}
+      register: user_check
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if sandbox not provisioned
+      ansible.builtin.fail:
+        msg: |
+          Sandbox user '{{ sandbox_user }}' not found!
+          Run 'make provision' first to set up the environment.
+      when: user_check.rc != 0
+
+    - name: Display current ComfyUI info
+      ansible.builtin.command:
+        cmd: git log -1 --format="%h - %s (%ar)"
+        chdir: "{{ comfyui_dir }}"
+      become: true
+      become_user: "{{ sandbox_user }}"
+      register: current_commit
+      changed_when: false
+
+    - name: Show current version
+      ansible.builtin.debug:
+        msg: |
+          Current ComfyUI version:
+          {{ current_commit.stdout }}
+
+  tasks:
+    - name: Fetch latest changes from remote
+      ansible.builtin.command:
+        cmd: git fetch origin
+        chdir: "{{ comfyui_dir }}"
+      become: true
+      become_user: "{{ sandbox_user }}"
+      changed_when: false
+
+    - name: Check if updates available
+      ansible.builtin.command:
+        cmd: git rev-list HEAD..origin/{{ comfyui_branch }} --count
+        chdir: "{{ comfyui_dir }}"
+      become: true
+      become_user: "{{ sandbox_user }}"
+      register: commits_behind
+      changed_when: false
+
+    - name: Display update status
+      ansible.builtin.debug:
+        msg: |
+          {% if commits_behind.stdout | int > 0 %}
+          🔄 {{ commits_behind.stdout }} new commit(s) available
+          {% else %}
+          ✅ ComfyUI is already up to date
+          {% endif %}
+
+    - name: Pull latest ComfyUI changes
+      ansible.builtin.command:
+        cmd: git pull origin {{ comfyui_branch }}
+        chdir: "{{ comfyui_dir }}"
+      become: true
+      become_user: "{{ sandbox_user }}"
+      register: git_pull_result
+      changed_when: "'Already up to date' not in git_pull_result.stdout"
+      when: commits_behind.stdout | int > 0
+
+    - name: Update ComfyUI requirements
+      ansible.builtin.command:
+        cmd: "{{ venv_dir }}/bin/pip install -r {{ comfyui_dir }}/requirements.txt"
+      become: true
+      become_user: "{{ sandbox_user }}"
+      register: pip_update
+      changed_when: "'Successfully installed' in pip_update.stdout"
+      when: commits_behind.stdout | int > 0
+
+    - name: Display new version
+      ansible.builtin.command:
+        cmd: git log -1 --format="%h - %s (%ar)"
+        chdir: "{{ comfyui_dir }}"
+      become: true
+      become_user: "{{ sandbox_user }}"
+      register: new_commit
+      changed_when: false
+      when: commits_behind.stdout | int > 0
+
+  post_tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+
+          {% if commits_behind.stdout | int > 0 %}
+          ✅ ComfyUI Updated!
+
+          Previous: {{ current_commit.stdout }}
+          Current:  {{ new_commit.stdout }}
+
+          {% else %}
+          ✅ ComfyUI Already Up to Date
+
+          Version: {{ current_commit.stdout }}
+          {% endif %}
+
+          To start ComfyUI:
+            make start

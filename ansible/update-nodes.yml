@@ -1,0 +1,163 @@
+---
+# Update playbook - sync custom nodes and pull latest changes
+
+- name: Update ComfyUI Sandbox Custom Nodes
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+
+  pre_tasks:
+    - name: Check if sandbox user exists
+      ansible.builtin.command: dscl . -read /Users/{{ sandbox_user }}
+      register: user_check
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if sandbox not provisioned
+      ansible.builtin.fail:
+        msg: |
+          Sandbox user '{{ sandbox_user }}' not found!
+          Run 'make provision' first to set up the environment.
+      when: user_check.rc != 0
+
+    - name: Display update mode
+      ansible.builtin.debug:
+        msg: |
+          Update Mode: {{ update_mode | default('sync') }}
+
+          Modes:
+          - sync: Ensure all enabled nodes are cloned (idempotent)
+          - pull: Update all existing nodes to latest (git pull)
+          - both: Sync nodes then pull updates
+
+  tasks:
+    - name: Sync custom nodes (ensure all enabled nodes exist)
+      ansible.builtin.include_role:
+        name: custom-nodes
+      when: update_mode | default('sync') in ['sync', 'both']
+
+    - name: Pull latest changes for all custom nodes
+      when: update_mode | default('sync') in ['pull', 'both']
+      block:
+        - name: Find all custom node directories
+          ansible.builtin.find:
+            paths: "{{ comfyui_dir }}/custom_nodes"
+            file_type: directory
+            recurse: false
+          become: true
+          become_user: "{{ sandbox_user }}"
+          register: existing_nodes
+
+        - name: Display nodes to update
+          ansible.builtin.debug:
+            msg: |
+              Updating {{ existing_nodes.files | length }} custom nodes...
+              {% for node in existing_nodes.files %}
+              - {{ node.path | basename }}
+              {% endfor %}
+
+        - name: Get current SHA before update
+          ansible.builtin.command:
+            cmd: git rev-parse HEAD
+            chdir: "{{ item.path }}"
+          become: true
+          become_user: "{{ sandbox_user }}"
+          loop: "{{ existing_nodes.files }}"
+          register: git_sha_before
+          changed_when: false
+          failed_when: false
+
+        - name: Pull latest changes for each custom node
+          ansible.builtin.command:
+            cmd: git pull
+            chdir: "{{ item.path }}"
+          become: true
+          become_user: "{{ sandbox_user }}"
+          loop: "{{ existing_nodes.files }}"
+          register: git_pull_result
+          changed_when: "'Already up to date' not in git_pull_result.stdout"
+          failed_when: false
+          # Ignore errors for nodes that aren't git repos
+
+        - name: Get current SHA after update
+          ansible.builtin.command:
+            cmd: git rev-parse HEAD
+            chdir: "{{ item.path }}"
+          become: true
+          become_user: "{{ sandbox_user }}"
+          loop: "{{ existing_nodes.files }}"
+          register: git_sha_after
+          changed_when: false
+          failed_when: false
+
+        - name: Get remote URL for each node
+          ansible.builtin.command:
+            cmd: git config --get remote.origin.url
+            chdir: "{{ item.path }}"
+          become: true
+          become_user: "{{ sandbox_user }}"
+          loop: "{{ existing_nodes.files }}"
+          register: git_remote_url
+          changed_when: false
+          failed_when: false
+
+        - name: Update .sandbox-version file for updated nodes
+          ansible.builtin.copy:
+            content: |
+              # Sandbox Version Tracking
+              repo_url: {{ git_remote_url.results[ansible_loop.index0].stdout | default('unknown') }}
+              current_sha: {{ git_sha_after.results[ansible_loop.index0].stdout }}
+              previous_sha: {{ git_sha_before.results[ansible_loop.index0].stdout }}
+              updated_at: {{ ansible_facts['date_time']['iso8601'] }}
+              status: {{ 'updated' if git_sha_before.results[ansible_loop.index0].stdout != git_sha_after.results[ansible_loop.index0].stdout else 'up_to_date' }}
+            dest: "{{ item.item.path }}/.sandbox-version"
+            owner: "{{ sandbox_user }}"
+            group: staff
+            mode: '0644'
+          become: true
+          loop: "{{ git_pull_result.results }}"
+          loop_control:
+            extended: true
+          when:
+            - not item.failed
+            - git_sha_after.results[ansible_loop.index0].stdout is defined
+
+        - name: Display update results
+          ansible.builtin.debug:
+            msg: |
+              {% for result in git_pull_result.results %}
+              {% if result.changed %}
+              ✅ Updated: {{ result.item.path | basename }}
+              {% elif result.failed %}
+              ⚠️  Skipped: {{ result.item.path | basename }} (not a git repo or error)
+              {% else %}
+              📝 No changes: {{ result.item.path | basename }}
+              {% endif %}
+              {% endfor %}
+
+        - name: Update requirements.txt for updated nodes
+          ansible.builtin.command:
+            cmd: "{{ venv_dir }}/bin/pip install -r {{ item.item.path }}/requirements.txt"
+          become: true
+          become_user: "{{ sandbox_user }}"
+          loop: "{{ git_pull_result.results }}"
+          when:
+            - item.changed
+            - item.item.path ~ '/requirements.txt' is file
+          register: pip_update_result
+          changed_when: "'Successfully installed' in pip_update_result.stdout"
+          failed_when: false
+
+  post_tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+
+          ✅ Custom Nodes Update Complete!
+
+          To update ComfyUI itself, run:
+            make update-comfyui
+
+          To start ComfyUI:
+            make start

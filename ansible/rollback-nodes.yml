@@ -1,0 +1,144 @@
+---
+# Rollback custom nodes to previous version using .sandbox-version files
+
+- name: Rollback Custom Nodes
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+
+  vars_prompt:
+    - name: rollback_confirm
+      prompt: |
+        ⚠️  WARNING: This will rollback custom nodes to their previous versions.
+
+        This uses the .sandbox-version files to restore previous SHAs.
+        Only nodes with a previous_sha will be rolled back.
+
+        Type 'yes' to confirm rollback
+      private: false
+
+  pre_tasks:
+    - name: Abort if not confirmed
+      ansible.builtin.fail:
+        msg: "Rollback aborted"
+      when: rollback_confirm | lower != "yes"
+
+    - name: Check if sandbox user exists
+      ansible.builtin.command: dscl . -read /Users/{{ sandbox_user }}
+      register: user_check
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if sandbox not provisioned
+      ansible.builtin.fail:
+        msg: |
+          Sandbox user '{{ sandbox_user }}' not found!
+          Run 'make provision' first.
+      when: user_check.rc != 0
+
+  tasks:
+    - name: Find all custom node directories
+      ansible.builtin.find:
+        paths: "{{ comfyui_dir }}/custom_nodes"
+        file_type: directory
+        recurse: false
+      become: true
+      become_user: "{{ sandbox_user }}"
+      register: existing_nodes
+
+    - name: Check for .sandbox-version files
+      ansible.builtin.stat:
+        path: "{{ item.path }}/.sandbox-version"
+      loop: "{{ existing_nodes.files }}"
+      register: version_files
+      become: true
+      become_user: "{{ sandbox_user }}"
+
+    - name: Read .sandbox-version files
+      ansible.builtin.slurp:
+        src: "{{ item.item.path }}/.sandbox-version"
+      loop: "{{ version_files.results }}"
+      when: item.stat.exists
+      register: version_contents
+      become: true
+      become_user: "{{ sandbox_user }}"
+
+    - name: Parse version information
+      ansible.builtin.set_fact:
+        rollback_info: "{{ rollback_info | default([]) + [item | combine({'parsed': item.content | b64decode | regex_findall('(\\w+): (.+)') | items2dict})] }}"
+      loop: "{{ version_contents.results }}"
+      when: item.content is defined
+
+    - name: Display rollback plan
+      ansible.builtin.debug:
+        msg: |
+          Rollback Plan:
+          {% for node in rollback_info %}
+          {% set prev_sha = node.parsed.previous_sha | default('none') %}
+          {% if prev_sha != 'none' %}
+          - {{ node.item.item.path | basename }}:
+            Current:  {{ node.parsed.current_sha }}
+            Previous: {{ prev_sha }}
+          {% endif %}
+          {% endfor %}
+
+    - name: Rollback nodes to previous SHA
+      ansible.builtin.command:
+        cmd: git reset --hard {{ item.parsed.previous_sha }}
+        chdir: "{{ item.item.item.path }}"
+      loop: "{{ rollback_info }}"
+      when:
+        - item.parsed.previous_sha is defined
+        - item.parsed.previous_sha != 'none'
+      become: true
+      become_user: "{{ sandbox_user }}"
+      register: rollback_result
+
+    - name: Update .sandbox-version after rollback
+      ansible.builtin.copy:
+        content: |
+          # Sandbox Version Tracking
+          repo_url: {{ item.parsed.repo_url }}
+          current_sha: {{ item.parsed.previous_sha }}
+          previous_sha: {{ item.parsed.current_sha }}
+          updated_at: {{ ansible_facts['date_time']['iso8601'] }}
+          status: rolled_back
+        dest: "{{ item.item.item.path }}/.sandbox-version"
+        owner: "{{ sandbox_user }}"
+        group: staff
+        mode: '0644'
+      loop: "{{ rollback_info }}"
+      when:
+        - item.parsed.previous_sha is defined
+        - item.parsed.previous_sha != 'none'
+      become: true
+
+    - name: Reinstall requirements.txt after rollback
+      ansible.builtin.command:
+        cmd: "{{ venv_dir }}/bin/pip install -r {{ item.item.item.path }}/requirements.txt"
+      loop: "{{ rollback_info }}"
+      when:
+        - item.parsed.previous_sha is defined
+        - item.parsed.previous_sha != 'none'
+        - (item.item.item.path ~ '/requirements.txt') is file
+      become: true
+      become_user: "{{ sandbox_user }}"
+      register: pip_install_result
+      changed_when: "'Successfully installed' in pip_install_result.stdout"
+      failed_when: false
+
+  post_tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+
+          ✅ Rollback Complete!
+
+          Rolled back {{ rollback_result.results | selectattr('changed', 'equalto', true) | list | length }} nodes
+
+          To start ComfyUI:
+            make start
+
+          To update nodes again:
+            make update-nodes-pull
