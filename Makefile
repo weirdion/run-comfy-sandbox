@@ -91,4 +91,12 @@ fix-permissions: ## Fix group permissions on shared directories (after adding mo
 	@sudo chgrp -R comfyshared $(WORKSPACE_DIR)/comfy/workflows
 	@sudo chgrp -R comfyshared $(WORKSPACE_DIR)/input
 	@sudo chgrp -R comfyshared $(WORKSPACE_DIR)/output
+	@sudo chown -R "$$USER:comfyshared" $(WORKSPACE_DIR)/models
+	@sudo chown -R "$$USER:comfyshared" $(WORKSPACE_DIR)/comfy/workflows
+	@sudo chown -R "$$USER:comfyshared" $(WORKSPACE_DIR)/input
+	@sudo chown -R "$$USER:comfyshared" $(WORKSPACE_DIR)/output
+	@sudo chmod -R 775 $(WORKSPACE_DIR)/models
+	@sudo chmod -R 775 $(WORKSPACE_DIR)/comfy/workflows
+	@sudo chmod -R 775 $(WORKSPACE_DIR)/input
+	@sudo chmod -R 775 $(WORKSPACE_DIR)/output
 	@echo "$(GREEN)✓ Permissions fixed$(NC)"

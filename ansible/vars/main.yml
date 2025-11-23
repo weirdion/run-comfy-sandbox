@@ -111,3 +111,13 @@ custom_nodes:
     repo: https://github.com/yolain/ComfyUI-Easy-Use.git
     enabled: true
     note: "CRITICAL: eval() usage, unsafe pickle, unsafe YAML"
+
+  # Image to Image nodes (review before enabling)
+
+  - name: ComfyUI-ControlNet-aux
+    repo: https://github.com/Fannovel16/comfyui_controlnet_aux.git
+    enabled: true
+
+  - name: ComfyUI-IPAdapter-plus
+    repo: https://github.com/cubiq/ComfyUI_IPAdapter_plus.git
+    enabled: true
