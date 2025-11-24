@@ -42,6 +42,7 @@
     dest: "{{ comfyui_dir }}/custom_nodes/{{ item.name }}"
     version: HEAD
     update: true
+    force: true
   become: true
   become_user: "{{ sandbox_user }}"
   loop: "{{ enabled_custom_nodes }}"

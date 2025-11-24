@@ -121,3 +121,16 @@ custom_nodes:
   - name: ComfyUI-IPAdapter-plus
     repo: https://github.com/cubiq/ComfyUI_IPAdapter_plus.git
     enabled: true
+
+  # Utility nodes
+  - name: rgthree-comfy
+    repo: https://github.com/rgthree/rgthree-comfy.git
+    enabled: true
+
+  - name: ComfyUI_UltimateSDUpscale
+    repo: https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git
+    enabled: true
+
+  - name: ComfyUI-KJNodes
+    repo: https://github.com/kijai/ComfyUI-KJNodes.git
+    enabled: true
