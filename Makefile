@@ -100,3 +100,8 @@ fix-permissions: ## Fix group permissions on shared directories (after adding mo
 	@sudo chmod -R 775 $(WORKSPACE_DIR)/input
 	@sudo chmod -R 775 $(WORKSPACE_DIR)/output
 	@echo "$(GREEN)✓ Permissions fixed$(NC)"
+
+update-volumes: check-ansible ## Update shared volumes configuration only
+	@echo "$(BLUE)Updating shared volumes...$(NC)"
+	cd ansible && ansible-playbook -i inventory.yml playbook.yml --tags volumes --ask-become-pass
+	@echo "$(GREEN)✓ Volumes updated$(NC)"

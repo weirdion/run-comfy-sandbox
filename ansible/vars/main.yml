@@ -32,16 +32,6 @@ ai_workspace: "{{ primary_user_home }}/workspace/ai"
 # Model directories to symlink (read-only from primary user)
 # Source: ~/workspace/ai/models/
 models_source_dir: "{{ ai_workspace }}/models"
-model_symlinks:
-  - checkpoints
-  - clip
-  - clip_vision
-  - controlnet
-  - embeddings
-  - loras
-  - upscale_models
-  - vae
-  - unet
 
 # Directory symlinks from primary user to sandbox ComfyUI
 # Format: { src: "~/workspace/ai/path", dest: "~/ComfyUI/path" }
@@ -134,3 +124,8 @@ custom_nodes:
   - name: ComfyUI-KJNodes
     repo: https://github.com/kijai/ComfyUI-KJNodes.git
     enabled: true
+
+  - name: ComfyUI-Comfyroll
+    repo: https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes.git
+    enabled: true
+    note: "Batch / pack generation tools; optional but useful for bundle workflows"

@@ -77,21 +77,47 @@
   loop: "{{ directory_symlinks }}"
   # Symlinks to shared read/write directories
 
+- name: Set shared group on sandbox ComfyUI for read access from primary user
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    group: "{{ shared_group }}"
+    mode: '2755'
+    recurse: true
+  become: true
+  loop:
+    - "{{ comfyui_dir }}"
+    - "{{ comfyui_dir }}/custom_nodes"
+  # Grant primary user read access to ComfyUI installation for LLM scanning
+  # 2755 = setgid bit + read-only for group members
+
+- name: Create symlink to sandbox ComfyUI in primary user workspace
+  ansible.builtin.file:
+    src: "{{ comfyui_dir }}"
+    dest: "{{ ai_workspace }}/ComfyUI"
+    state: link
+    force: true
+  # Allows primary user to access sandbox ComfyUI for security scanning
+
 - name: Display shared volumes info
   ansible.builtin.debug:
     msg: |
       Directory symlinks created using shared group: {{ shared_group }}
 
-      Read/Write (both users - 775):
+      Read/Write (both users - 2775):
       {% for link in directory_symlinks %}
         {{ link.description }}: {{ link.src }} -> {{ link.dest }}
       {% endfor %}
 
-      Read-Only for sandbox (755):
+      Read-Only for sandbox (2755):
         Models: {{ models_source_dir }} -> {{ comfyui_dir }}/models
 
+      Read-Only for primary user (2755):
+        Sandbox ComfyUI: {{ comfyui_dir }} -> {{ ai_workspace }}/ComfyUI
+
       Permission model:
-        - Primary user ({{ primary_user }}): owns all files
+        - Primary user ({{ primary_user }}): owns shared files, can read sandbox ComfyUI
         - Shared group ({{ shared_group }}): both users are members
-        - Workflows/input/output: 775 (group has read/write)
-        - Models: 755 (group has read-only)
+        - Workflows/input/output: 2775 (group has read/write)
+        - Models: 2755 (group has read-only)
+        - ComfyUI/custom_nodes: 2755 (group has read-only for scanning)
