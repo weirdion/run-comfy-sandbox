@@ -129,3 +129,16 @@ custom_nodes:
     repo: https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes.git
     enabled: true
     note: "Batch / pack generation tools; optional but useful for bundle workflows"
+
+  - name: ComfyUI-Inspire-Pack
+    repo: https://github.com/ltdrdata/ComfyUI-Inspire-Pack.git
+    enabled: true
+
+  # video workflows
+  - name: ComfyUI-WanVideoWrapper
+    repo: https://github.com/kijai/ComfyUI-WanVideoWrapper.git
+    enabled: true
+
+  - name: ComfyUI-VideoHelperSuite
+    repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
+    enabled: true
