@@ -59,19 +59,30 @@
         msg: |
           {% if commits_behind.stdout | int > 0 %}
           🔄 {{ commits_behind.stdout }} new commit(s) available
+          Local changes will be overwritten - symlinks will be recreated by Ansible
           {% else %}
           ✅ ComfyUI is already up to date
           {% endif %}
 
-    - name: Pull latest ComfyUI changes
+    - name: Force reset to latest upstream (discards local changes)
       ansible.builtin.command:
-        cmd: git pull origin {{ comfyui_branch }}
+        cmd: git reset --hard origin/{{ comfyui_branch }}
         chdir: "{{ comfyui_dir }}"
       become: true
       become_user: "{{ sandbox_user }}"
-      register: git_pull_result
-      changed_when: "'Already up to date' not in git_pull_result.stdout"
+      register: git_reset_result
+      changed_when: true
       when: commits_behind.stdout | int > 0
+      # Discard any local changes - we'll recreate symlinks via shared-volumes role
+
+    - name: Clean untracked files and directories
+      ansible.builtin.command:
+        cmd: git clean -fd
+        chdir: "{{ comfyui_dir }}"
+      become: true
+      become_user: "{{ sandbox_user }}"
+      when: commits_behind.stdout | int > 0
+      # Remove any untracked files (like broken symlinks)
 
     - name: Update ComfyUI requirements
       ansible.builtin.command:
@@ -81,6 +92,12 @@
       register: pip_update
       changed_when: "'Successfully installed' in pip_update.stdout"
       when: commits_behind.stdout | int > 0
+
+    - name: Recreate symlinks to shared volumes
+      ansible.builtin.import_role:
+        name: shared-volumes
+      when: commits_behind.stdout | int > 0
+      # Recreate models/input/output/workflows symlinks after force reset
 
     - name: Display new version
       ansible.builtin.command:

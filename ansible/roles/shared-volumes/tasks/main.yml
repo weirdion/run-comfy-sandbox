@@ -46,6 +46,18 @@
   # 2775 = setgid bit ensures new files inherit comfyshared group
   # Ensures all files in these directories are accessible to both users
 
+- name: Remove default directories that will be replaced with symlinks
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop:
+    - "{{ comfyui_dir }}/models"
+    - "{{ comfyui_dir }}/input"
+    - "{{ comfyui_dir }}/output"
+    - "{{ comfyui_dir }}/user/default/workflows"
+  # Remove ComfyUI's auto-created directories before symlinking
+
 - name: Create symlink for entire models directory
   ansible.builtin.file:
     src: "{{ models_source_dir }}"
