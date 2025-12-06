@@ -7,6 +7,7 @@ set -e
 SANDBOX_USER="comfyui_sandbox"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+LISTEN_HOST="${COMFYUI_LISTEN_HOST:-127.0.0.1}"  # Default to localhost, override with env var
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -38,14 +39,20 @@ fi
 echo -e "${GREEN}✅ Sandbox environment ready${NC}"
 echo ""
 echo -e "${BLUE}Starting ComfyUI...${NC}"
-echo "   Access UI at: http://127.0.0.1:8188"
+if [ "$LISTEN_HOST" = "0.0.0.0" ]; then
+    echo "   Access UI at: http://localhost:8188 (or http://<your-mac-ip>:8188)"
+    echo -e "${YELLOW}   Network exposed - accessible from other devices${NC}"
+else
+    echo "   Access UI at: http://127.0.0.1:8188"
+    echo "   (localhost only)"
+fi
 echo "   Press Ctrl+C to stop"
 echo ""
 
 # Switch to sandbox user and run ComfyUI
 # Using sudo -u instead of su for better automation
-sudo -u ${SANDBOX_USER} -i bash << 'EOF'
+sudo -u ${SANDBOX_USER} -i bash << EOF
 cd ~/ComfyUI
 source venv/bin/activate
-python main.py --listen 127.0.0.1 --port 8188
+python main.py --listen $LISTEN_HOST --port 8188
 EOF

@@ -1,4 +1,4 @@
-.PHONY: help provision teardown start stop status shell check update-nodes update-nodes-pull update-comfyui update-all rollback-nodes
+.PHONY: help provision teardown start start-expose stop status shell check update-nodes update-nodes-pull update-comfyui update-all rollback-nodes
 
 # Colors
 BLUE := \033[0;34m
@@ -61,8 +61,11 @@ teardown: check-ansible ## Completely remove sandbox environment
 	@echo "$(YELLOW)⚠️  This will remove the sandbox environment$(NC)"
 	cd ansible && ansible-playbook -i inventory.yml teardown.yml --ask-become-pass
 
-start: ## Start ComfyUI in sandbox
+start: ## Start ComfyUI in sandbox (localhost only)
 	@bash scripts/start-comfyui.sh
+
+start-expose: ## Start ComfyUI accessible from network (0.0.0.0)
+	@COMFYUI_LISTEN_HOST=0.0.0.0 bash scripts/start-comfyui.sh
 
 comfyui-start: start ## Alias for start
 
