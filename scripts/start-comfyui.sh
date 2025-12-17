@@ -82,5 +82,19 @@ echo ""
 sudo -u ${SANDBOX_USER} -i bash << EOF
 cd ~/ComfyUI
 source venv/bin/activate
+
+# Resource Prioritization
+# 1. Increase File Descriptors for heavy I/O
+ulimit -n 20480
+
+# 2. Set Max Memory (Safety Cap) to leaving ~4GB for system
+# Calculate available RAM in KB and subtract 4GB
+TOTAL_MEM_KB=\$(sysctl -n hw.memsize | awk '{print int(\$1 / 1024)}')
+SAFE_MEM_KB=\$((TOTAL_MEM_KB - 4194304)) # Subtract 4GB
+# Ensure we don't set a negative limit (if machine has <4GB)
+if [ \$SAFE_MEM_KB -gt 0 ]; then
+    ulimit -v \$SAFE_MEM_KB
+fi
+
 python main.py --listen $LISTEN_HOST --port 8188
 EOF
