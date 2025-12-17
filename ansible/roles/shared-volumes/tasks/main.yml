@@ -18,16 +18,34 @@
   # 2775 = setgid bit ensures new files inherit comfyshared group
   # Both users have read/write/execute
 
-- name: Ensure models directory exists with read-only group access
+- name: Check if models is a symlink (external drive setup)
+  ansible.builtin.stat:
+    path: "{{ models_source_dir }}"
+  register: models_stat
+
+- name: Ensure models directory exists (if not a symlink)
   ansible.builtin.file:
     path: "{{ models_source_dir }}"
     state: directory
     owner: "{{ primary_user }}"
     group: "{{ shared_group }}"
-    mode: '2755'
+    mode: '2775'
   become: true
-  # Models are 2755: setgid bit ensures new files inherit comfyshared group
-  # Primary user can write, sandbox user can only read
+  when: not models_stat.stat.exists or not models_stat.stat.islnk
+  # Models are 2775: setgid bit ensures new files inherit comfyshared group
+  # Both users can write (needed for .sha256, .civitai.info, etc.)
+
+- name: Fix permissions on external drive models (if symlink)
+  ansible.builtin.file:
+    path: "{{ models_stat.stat.lnk_source }}"
+    owner: "{{ primary_user }}"
+    group: "{{ shared_group }}"
+    mode: '2775'
+    recurse: true
+  become: true
+  when: models_stat.stat.exists and models_stat.stat.islnk
+  # If models is symlinked to external drive, fix permissions on target
+  # 2775 = group has write access for .sha256 and .civitai.info files
 
 - name: Set group ownership recursively on shared directories
   ansible.builtin.file:
@@ -42,9 +60,9 @@
     - "{{ ai_workspace }}/comfy/workflows"
     - "{{ ai_workspace }}/input"
     - "{{ ai_workspace }}/output"
-    - "{{ models_source_dir }}"
   # 2775 = setgid bit ensures new files inherit comfyshared group
   # Ensures all files in these directories are accessible to both users
+  # Note: models_source_dir handled separately (may be symlink to external drive)
 
 - name: Remove default directories that will be replaced with symlinks
   ansible.builtin.file:

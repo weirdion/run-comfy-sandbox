@@ -90,15 +90,24 @@ logs: ## Show recent ComfyUI logs (if running)
 
 fix-permissions: ## Fix group permissions on shared directories (after adding models/files)
 	@echo "$(BLUE)Fixing permissions on shared directories...$(NC)"
-	@sudo chgrp -R comfyshared $(WORKSPACE_DIR)/models
+	@# Fix external drive models (if it's a symlink, fix the target)
+	@if [ -L "$(WORKSPACE_DIR)/models" ]; then \
+		MODELS_TARGET=$$(readlink $(WORKSPACE_DIR)/models); \
+		echo "$(YELLOW)Models is a symlink to: $$MODELS_TARGET$(NC)"; \
+		sudo chgrp -R comfyshared "$$MODELS_TARGET"; \
+		sudo chown -R "$$USER:comfyshared" "$$MODELS_TARGET"; \
+		sudo chmod -R 775 "$$MODELS_TARGET"; \
+	else \
+		sudo chgrp -R comfyshared $(WORKSPACE_DIR)/models; \
+		sudo chown -R "$$USER:comfyshared" $(WORKSPACE_DIR)/models; \
+		sudo chmod -R 775 $(WORKSPACE_DIR)/models; \
+	fi
 	@sudo chgrp -R comfyshared $(WORKSPACE_DIR)/comfy/workflows
 	@sudo chgrp -R comfyshared $(WORKSPACE_DIR)/input
 	@sudo chgrp -R comfyshared $(WORKSPACE_DIR)/output
-	@sudo chown -R "$$USER:comfyshared" $(WORKSPACE_DIR)/models
 	@sudo chown -R "$$USER:comfyshared" $(WORKSPACE_DIR)/comfy/workflows
 	@sudo chown -R "$$USER:comfyshared" $(WORKSPACE_DIR)/input
 	@sudo chown -R "$$USER:comfyshared" $(WORKSPACE_DIR)/output
-	@sudo chmod -R 775 $(WORKSPACE_DIR)/models
 	@sudo chmod -R 775 $(WORKSPACE_DIR)/comfy/workflows
 	@sudo chmod -R 775 $(WORKSPACE_DIR)/input
 	@sudo chmod -R 775 $(WORKSPACE_DIR)/output

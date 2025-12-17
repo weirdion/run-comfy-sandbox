@@ -19,6 +19,34 @@ echo -e "${BLUE}🚀 Starting ComfyUI in sandbox environment${NC}"
 echo -e "${YELLOW}   User: ${SANDBOX_USER}${NC}"
 echo ""
 
+# Check if external drive is mounted
+EXTERNAL_VOLUME="/Volumes/ai-experiments"
+MODELS_SOURCE="$EXTERNAL_VOLUME/comfy/models"
+
+if [ ! -d "$EXTERNAL_VOLUME" ]; then
+    echo -e "${YELLOW}❌ External drive not mounted!${NC}"
+    echo "   Expected: $EXTERNAL_VOLUME"
+    echo ""
+    echo "   Please mount the external drive and try again:"
+    echo "   1. Connect the USB-C drive"
+    echo "   2. Wait for /Volumes/ai-experiments to appear"
+    echo "   3. Run: make start"
+    exit 1
+fi
+
+if [ ! -d "$MODELS_SOURCE" ]; then
+    echo -e "${YELLOW}❌ Models directory not found on external drive!${NC}"
+    echo "   Expected: $MODELS_SOURCE"
+    echo ""
+    echo "   The drive is mounted but models directory is missing."
+    echo "   Did you complete the migration? See migration notes."
+    exit 1
+fi
+
+echo -e "${GREEN}✅ External drive mounted${NC}"
+echo "   Models: $MODELS_SOURCE"
+echo ""
+
 # Check if sandbox user exists
 if ! dscl . -read /Users/${SANDBOX_USER} &>/dev/null; then
     echo -e "${YELLOW}⚠️  Sandbox user not found!${NC}"
